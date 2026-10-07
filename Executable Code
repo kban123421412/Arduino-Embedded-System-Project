@@ -1,0 +1,601 @@
+#include <Wire.h>
+#include <Adafruit_RGBLCDShield.h>
+#include <utility/Adafruit_MCP23017.h>
+
+#include <MemoryFree.h>
+
+Adafruit_RGBLCDShield lcd = Adafruit_RGBLCDShield();
+
+// Structure to store the employee information
+struct GeneralInfo {
+  long id;  // employee id stored as a long (7 digits)
+  int grade;
+  String title;
+  double salary;
+  boolean PEN;
+};
+
+int currentAccountNum = 0;
+
+struct GeneralInfo agents[10];
+int agentCount = 0;
+
+static unsigned long scrollTime[10] = { 0 };
+static int scrollCount[10] = { 0 };
+
+// Where the different phases are defined
+enum State {
+  sync,
+  main
+};
+State livestate = sync;  // Sets intial live state to Sync
+
+enum Menu {
+  Default,
+  PENMenu,
+  SalaryMenu,
+  TaxMenu
+};
+Menu currentMenu = Default;
+
+bool rightButtonPressed = false;
+
+int currentInfo = 1;
+
+boolean backLight = false;
+
+//Stored as longs as when stored as int would often lead to issues with the timer
+long start = 0;
+long end = 1000;
+boolean selectButtonPressed = false;
+
+bool Pension();
+
+//From the given custon character generator website on the lab week 5
+byte upArrow[8] = {  //defining 2 custom characters for the up and down
+  0b00100,
+  0b01110,
+  0b10101,
+  0b00100,
+  0b00100,
+  0b00100,
+  0b00100,
+  0b00100
+};
+
+byte downArrow[8] = {
+  0b00100,
+  0b00100,
+  0b00100,
+  0b00100,
+  0b00100,
+  0b10101,
+  0b01110,
+  0b00100
+};
+
+
+bool Pension(int account) {
+  return agents[account].PEN;
+}
+
+
+
+void setup() {
+  Serial.begin(9600);
+  lcd.begin(16, 2);  // Initialises LCD
+  lcd.setCursor(1, 0);
+  lcd.setBacklight(3);
+
+  lcd.createChar(0, upArrow);  //initialising custom charcters
+  lcd.createChar(1, downArrow);
+}
+
+void scrollingTitle(int titleCount) {  // attempt 7 at effectively scrolling the title without blocking thhe buttons being pressed
+
+  String title = agents[titleCount].title + " ";
+
+  if (title.length() > 7) {
+    if (millis() - scrollTime[titleCount] >= 500) {  // So scroll time is 2 characters per second
+      lcd.setCursor(9, 1);
+      for (int i = 0; i < 7; i++) {
+        lcd.print(title[(scrollCount[titleCount] + i) % title.length()]);
+      }
+      scrollCount[titleCount] = (scrollCount[titleCount] + 1) % title.length();
+      scrollTime[titleCount] = millis();
+    }
+
+  } else {
+    lcd.setCursor(9, 1);
+    lcd.print(title);
+  }
+}
+
+
+double taxCalculation(double salary, int account) {
+
+  double tax = 0;
+  double PENContribution = salary;
+
+  if (Pension(account)) {
+    PENContribution = salary * 0.061;
+  }
+  double taxedSalary = salary - PENContribution;
+
+  if (taxedSalary > 125140) {
+    tax += (taxedSalary - 125140) * 0.45;
+    taxedSalary = 125140;
+  }
+  if (taxedSalary > 50271) {
+    tax += (taxedSalary - 50271) * 0.4;
+    taxedSalary = 50271;
+  }
+  if (taxedSalary > 12570) {
+    tax += (taxedSalary - 12570) * 0.2;
+  }
+  return tax / 12;
+}
+
+
+void displayAgent(int account) {  //defining a function to appropriatly display the account data to the lcd, i place this function within the up adn down buttons respectively
+
+
+  if (agents[account].PEN) {
+    lcd.setBacklight(2);
+  } else {
+    lcd.setBacklight(1);
+  }
+
+
+  if (account > 0) {
+    lcd.setCursor(0, 0);
+    lcd.write((uint8_t)0);
+  }
+  if (account < agentCount - 1) {
+    lcd.setCursor(0, 1);
+    lcd.write((uint8_t)1);
+  }
+
+  lcd.setCursor(1, 0);
+  lcd.print(agents[account].grade);
+  lcd.setCursor(1, 1);
+  lcd.print(agents[account].id);
+  lcd.setCursor(3, 0);
+  lcd.print("    ");
+  lcd.setCursor(3, 0);
+  lcd.print(agents[account].PEN ? "PEN" : "NPEN");  // if Boolean value of.PEN is true "PEN" will be displayed and teh latter for if .PEN is false
+  scrollingTitle(account);
+
+  if (currentMenu == SalaryMenu) {
+    lcd.setCursor(8, 0);
+    lcd.print(agents[account].salary / 12);
+
+  } else if (currentMenu == TaxMenu) {
+    lcd.setCursor(8, 0);
+    lcd.print(taxCalculation(agents[account].salary, account), 2);
+
+  } else if (currentMenu == PENMenu) {
+    if (!agents[account].PEN) {
+      lcd.clear();
+      return;
+    } else {
+      lcd.setCursor(8, 0);
+      lcd.print(agents[account].salary);
+    }
+  } else if (currentMenu == Default) {
+
+    lcd.setCursor(8, 0);
+    lcd.print(agents[account].salary);
+  }
+}
+
+
+
+void displayMenu(int account) {
+
+  lcd.clear();
+
+  switch (currentMenu) {
+    case Default:
+      displayAgent(account);
+
+
+      break;
+
+    case PENMenu:
+
+      if (Pension(account)) {
+        displayAgent(account);
+      } else {
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("NO MATCHING ACC");
+      }
+      break;
+
+    case SalaryMenu:
+      displayAgent(account);
+
+      break;
+
+    case TaxMenu:
+      displayAgent(account);
+      break;
+  }
+}
+
+
+
+void loop() {
+
+
+  switch (livestate) {
+    case sync:
+      {
+        lcd.setBacklight(3);  // Sets backlight to yellow
+        Serial.print("R");    // Repeatedly sends "R" to teh Serial monitor
+        delay(1500);
+
+        if (Serial.available() == 0)
+          ;  // Waits for Input data
+
+        String inpStr = Serial.readString();
+
+        if (inpStr == "BEGIN") {
+          Serial.println("BASIC");
+          lcd.setBacklight(7);
+          backLight = true;
+          livestate = main;  // Changes state to Main phase
+        }
+        break;
+      }
+
+    case main:
+      { // Shows that we have entered the main phase
+
+        //Serial.print("DEBUG:         ");
+
+        if (backLight == true) {
+          //Serial.print("DEBUG:    ");
+          lcd.setBacklight(7);
+          backLight = false;
+        }
+
+        if (Serial.available() > 0) {
+          String inpStr = Serial.readString();
+
+
+          if (inpStr.startsWith("ADD-")) {  // Addition of new employee information
+            inpStr.remove(0, 4);
+
+
+            int dash1 = inpStr.indexOf('-');
+            int dash2 = inpStr.indexOf('-', dash1 + 1);
+
+            if (dash1 != -1 && dash2 != -1) {
+              String idstr = inpStr.substring(0, dash1);  //Converts original imput string to substrings with the respective information
+              String gradestr = inpStr.substring(dash1 + 1, dash2);
+              String title = inpStr.substring(dash2 + 1);
+
+              long id = idstr.toInt();  // Converts id from string to integer to a long
+              int grade = gradestr.toInt();
+
+
+              //Checks title so only special character accepted is "_"
+              bool validTitle = true;
+              bool existingID = false;
+
+              if (id >= 1000000 && id <= 9999999 && grade >= 0 && grade <= 9 && agentCount < 10 && title.length() >= 3) {  // validates the ADD- data so that it is in the desired propper format
+
+                for (int i = 0; i < title.length(); i++) {
+                  char specialCharacter = title[i];
+                  if (!isalnum(specialCharacter) && specialCharacter != '_') {
+                    validTitle = false;
+                    Serial.print("ERROR: ");//error for invalid title
+                    break;
+                  }
+                }
+
+                for (int i = 0; i < agentCount; i++) {  // checks if the id inputed already exists
+                  if (agents[i].id == id) {
+                    existingID = true;
+                    break;
+                  }
+                }
+
+                if (!existingID) {
+                  agents[agentCount].id = id;
+                  agents[agentCount].grade = grade;  // Coverts grade from a string to an integer
+                  agents[agentCount].title = title;
+
+                  scrollTime[agentCount] = millis();
+                  scrollCount[agentCount] = 0;
+
+                  currentAccountNum = agentCount;
+                  displayAgent(agentCount);
+
+                  //Serial.print("DEBUG:      ");
+                  agentCount++;
+                } else {
+                  Serial.print("ERROR: ");  //error for existing id inputed
+                }
+              }
+
+              else {  // displays an error to the serial if wrong format is used
+                Serial.print("ERROR: ");
+              }
+            }
+          }
+          // Code for overwriting the Grade
+          if (inpStr.startsWith("GRD-")) {
+            //Serial.print("DEBUGG:        ");
+            inpStr.remove(0, 4);
+            inpStr.trim();
+
+            int dash1 = inpStr.indexOf('-');
+            if (dash1 != -1) {
+
+              String idstr = inpStr.substring(0, dash1);
+              String gradestr = inpStr.substring(dash1 + 1);
+
+              long id = idstr.toInt();
+              int newGrade = gradestr.toInt();
+
+
+              if (id >= 1000000 && id <= 9999999 && newGrade < 10 && newGrade > 0) {
+                for (int i = 0; i < agentCount; i++) {
+                  //Serial.print("DEBUGG: ");
+
+                  if (agents[i].id == id) {  //checks inputed id so correct grade is changed
+                    if (agents[i].grade < newGrade) {
+                      agents[i].grade = newGrade;
+                      lcd.setCursor(0, 0);
+                      lcd.print(agents[i].grade);
+                    }
+                    break;
+                  } else {
+                    Serial.print("Error:");  //error for if inputed id is not recognised
+                  }
+                }
+              } else {
+                Serial.print("ERROR:");  // error for invalid input format
+              }
+            }
+          }
+          // code for changing Pension status
+          if (inpStr.startsWith("PST-")) {
+
+            inpStr.remove(0, 4);
+            inpStr.trim();
+            //Serial.print("DEBUG:     ");
+
+            int dash1 = inpStr.indexOf('-');
+            if (dash1 != -1) {
+
+              String idstr = inpStr.substring(0, dash1);
+              String PENstr = inpStr.substring(dash1 + 1);
+
+              long id = idstr.toInt();
+              boolean newPEN = (PENstr == "PEN");
+
+
+              for (int i = 0; i < agentCount; i++) {  // checks id so correct pesnsion status is updated to the correct person
+                if (agents[i].id == id) {
+                  if (agents[i].salary == 0) {
+                    Serial.print("ERROR: ");  // ensures that pension status cannnot be changed if the salary hasnt been changed first
+                  } else {
+
+                    agents[i].PEN = newPEN;
+                    lcd.clear();
+                    lcd.setCursor(3, 0);
+                    lcd.print(agents[i].PEN ? "PEN" : "NPEN");
+                    displayAgent(i);
+                  }
+
+
+
+                  break;
+                } else {
+                  Serial.print("ERROR: ");  // Error for when id is not recognised
+                }
+              }
+            }
+          }
+          // code for changing salary
+          if (inpStr.startsWith("SAL-")) {
+            inpStr.remove(0, 4);
+            inpStr.trim();
+
+            int dash1 = inpStr.indexOf('-');
+            if (dash1 != -1) {
+
+              String idstr = inpStr.substring(0, dash1);
+              String salstr = inpStr.substring(dash1 + 1);
+
+              long id = idstr.toInt();
+              double salary = salstr.toInt();
+
+              for (int i = 0; i < agentCount; i++) {  // checks id so correct salary is updated to the correct person
+                if (agents[i].id == id) {
+                  agents[i].salary = salary;
+                  lcd.setCursor(8, 0);
+                  lcd.print("        ");
+                  lcd.setCursor(8, 0);
+                  lcd.print(salary);
+                }
+              }
+            }
+          }
+          //code for changing the title
+          if (inpStr.startsWith("CJT-")) {
+            inpStr.remove(0, 4);
+            inpStr.trim();
+
+            int dash1 = inpStr.indexOf('-');
+            if (dash1 != -1) {
+
+              String idstr = inpStr.substring(0, dash1);
+              String titlestr = inpStr.substring(dash1 + 1);
+
+              long id = idstr.toInt();
+              String title = titlestr;
+
+              //Checks title so only special character accepted is "_"
+              for (int i = 0; i < title.length(); i++) {
+                char specialCharacter = title[i];
+                if (!isalnum(specialCharacter) && specialCharacter != '_') {
+                  Serial.print("ERROR: ");//error for invalid title
+                  break;
+                }
+              }
+
+              for (int i = 0; i < agentCount; i++) {  // checks id so correct title is updated to the correct person
+                if (agents[i].id == id) {
+                  agents[i].title = title;
+                  lcd.setCursor(9, 1);
+                  lcd.print(agents[i].title);
+                  break;
+                }
+              }
+            }
+          }
+          if (inpStr.startsWith("DEL-")) {
+            inpStr.remove(0, 4);
+            inpStr.trim();
+
+            int dash1 = inpStr.indexOf('-');
+            if (dash1 != -1) {
+
+              String idstr = inpStr.substring(0, dash1);
+
+              long id = inpStr.toInt();
+
+              for (int i = 0; i < agentCount; i++) {  // checks id so correct accoint is deleted is updated to the correct person
+                if (agents[i].id == id) {
+                  for (int j = i; j < agentCount - 1; j++) {  //"deletes" account by overwritong teh account
+                    agents[j] = agents[j + 1];
+                  }
+                  agentCount--;
+                  break;
+                }
+              }
+            }
+          }
+        }
+        uint8_t buttons = lcd.readButtons();  // from lab worksheets, aswell as the if statements for button pressing
+        if (buttons & BUTTON_UP) {
+          //Serial.print("DEBUG:    ");
+
+          if (currentAccountNum > 0) {
+            currentAccountNum--;
+            while (currentAccountNum > 0 && currentMenu == PENMenu && !Pension(currentAccountNum)) {// to skip NPEN accounts
+              //Serial.print("DEBUGG:        ");
+              currentAccountNum--;
+            }
+          }
+          lcd.clear();
+          displayAgent(currentAccountNum);
+          delay(200);
+        }
+
+        if (buttons & BUTTON_DOWN) {
+          //Serial.print("DEBUG:    ");
+          if (currentAccountNum < agentCount - 1) {
+            currentAccountNum++;
+            while (currentAccountNum < agentCount - 1 && currentMenu == PENMenu && !Pension(currentAccountNum)) { // to skip NPEN accounts
+              //Serial.print("DEBUGG:        ");
+              currentAccountNum++;
+            }
+          }
+          lcd.clear();
+          displayAgent(currentAccountNum);
+          delay(200);
+        }
+
+
+        if (buttons & BUTTON_RIGHT) {
+          if (!rightButtonPressed) { // when pressing right system scrolls throught differnt Menus
+            rightButtonPressed = true;
+
+            if (currentMenu == Default) {
+              lcd.clear();
+              lcd.setBacklight(5);
+              lcd.setCursor(0, 0);
+              lcd.print("Pension Menu");
+              delay(1000);
+              lcd.clear();
+              currentMenu = PENMenu;
+            } else if (currentMenu == PENMenu) {
+              lcd.clear();
+              //Serial.print("DEBUG: ENTER SAL MENU");
+              lcd.clear();
+              lcd.setBacklight(6);
+              lcd.setCursor(0, 0);
+              lcd.print("Salary Menu");
+              delay(1000);
+              lcd.clear();
+              if (Pension(currentAccountNum)) {
+                currentMenu = SalaryMenu;
+              }
+            } else if (currentMenu == SalaryMenu) {
+              lcd.clear();
+              lcd.setBacklight(4);
+              lcd.setCursor(0, 0);
+              lcd.print("Tax Menu Menu");
+              delay(1000);
+              lcd.clear();
+              currentMenu = TaxMenu;
+            } else if (currentMenu == TaxMenu) {
+              lcd.clear();
+              lcd.setBacklight(7);
+              lcd.setCursor(0, 0);
+              lcd.print("Default Menu");
+              delay(1000);
+              lcd.clear();
+              currentMenu = Default;
+            }
+            lcd.clear();
+            displayMenu(currentAccountNum);
+            delay(200);
+          }
+        } else {
+          rightButtonPressed = false;
+        }
+
+
+
+        if (buttons & BUTTON_SELECT) {
+          if (start == 0) {
+            start = millis();  // starts a timer when the button is pressed
+          }
+          //Serial.println(millis() - start > end);
+          if (!selectButtonPressed && millis() - start > end) {  // if the timer reaches the desired threshhold of 1 second screen will change
+            selectButtonPressed = true;
+            lcd.clear();
+            lcd.setBacklight(5);
+            lcd.setCursor(0, 0);
+            lcd.print("F421005");
+            lcd.setCursor(0, 1);
+            lcd.print(freeMemory());
+          }
+        } else {
+          start = 0;
+          if (selectButtonPressed) {  // when select button is no longer being pressed then the boolean will be turned back to false and the displayAgent function executed to show the previous information ie sal title ect
+            if (agentCount > 0) {
+              selectButtonPressed = false;
+              lcd.clear();
+              displayAgent(currentAccountNum);
+            } else {  // as to not bug out the display if select button is pressed when no information has been added yet
+              lcd.clear();
+              lcd.setBacklight(7);
+              displayAgent(currentAccountNum);
+            }
+          }
+          if (livestate == main && agentCount > 0 && !selectButtonPressed || currentMenu == PENMenu || currentMenu == SalaryMenu || currentMenu == TaxMenu) {
+            scrollingTitle(currentAccountNum);
+          }
+        }
+        break;
+      }
+  }
+}
