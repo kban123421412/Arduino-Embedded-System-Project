@@ -1,41 +1,42 @@
-# Arduino-Embedded-System-Project
+# ⚡ Arduino Embedded System Project
 Embedded System on Arduino using mainly adafruit library. Graded at 78%.
 
-An embedded system implementation developed using C/C++ on the Arduino platform. This repository contains the source code, compiled executable artifacts, and technical project documentation.
+[![Arduino](https://img.shields.io/badge/Arduino-00979D?style=for-the-badge&logo=Arduino&logoColor=white)](https://www.arduino.cc/)
+[![Language](https://img.shields.io/badge/Language-C%2FC%2B%2B-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white)](https://isocpp.org/)
+[![Status](https://img.shields.io/badge/Status-Completed-success?style=for-the-badge)](#)
+
+> An embedded systems implementation built with C/C++ on the Arduino platform, featuring microcontroller source code, compiled binaries, and complete hardware technical documentation.
 
 ---
 
-## 📁 Repository Structure
+## 📂 Repository Layout
 
-```text
-.
-├── Executable Code/       # Pre-compiled binaries and build outputs
-├── F421005.ino            # Main Arduino microcontroller sketch
-├── F421005 (1).pdf        # Technical project report and hardware documentation
-└── README.md              # Project documentation
+| Resource | Description |
+| :--- | :--- |
+| 📜 **`F421005.ino`** | Core Arduino source code sketch |
+| 📁 **`Executable Code/`** | Pre-compiled binary build outputs for direct flashing |
+| 📄 **`F421005 (1).pdf`** | Technical project report, schematics, and component specifications[cite: 2] |
 
+---
 
-🛠 Hardware & Software Requirements
-Hardware
-Arduino Microcontroller Board (e.g., Arduino Uno / Mega / Nano)
+## ⚙️ Prerequisites
 
-USB Interface Cable
+### 🖥️ Software
+* **[Arduino IDE](https://www.arduino.cc/en/software)** (v1.8.x or v2.x)
+* **[AVRDUDE](https://github.com/avrdudes/avrdude)** *(Optional: required only if flashing compiled binaries manually)*
 
-Project-specific sensors, actuators, and breadboard circuitry (refer to F421005 (1).pdf for schematic details)
+### 🔌 Hardware Setup
+* Arduino Microcontroller Board *(e.g., Uno R3, Nano, Mega 2560)*
+* USB Cable & Circuit Breadboard
+* *For exact pin mappings, sensor wiring, and circuit schematics, inspect [`F421005 (1).pdf`](./F421005%20%281%29.pdf)[cite: 2].*
 
-Software
-Arduino IDE (v1.8.x or v2.x)
+---
 
-Required hardware libraries (configured within the sketch)
+## 🚀 Quick Start Guide
 
-🚀 Getting Started
-Option 1: Uploading Source Code via Arduino IDE
-Clone or download this repository.
+### Option 1: Compile & Upload via Arduino IDE
 
-Open F421005.ino in the Arduino IDE.
-
-Connect your Arduino board via USB.
-
-Select your board type (Tools > Board) and the correct serial port (Tools > Port).
-
-Click Verify to compile, then Upload to flash the code onto the board.
+1. **Clone the repository:**
+   ```bash
+   git clone [https://github.com/kban123421412/arduino-embedded-system-project.git](https://github.com/kban123421412/arduino-embedded-system-project.git)
+   cd arduino-embedded-system-project
